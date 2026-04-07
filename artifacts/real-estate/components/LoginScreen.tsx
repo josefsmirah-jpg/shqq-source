@@ -58,6 +58,11 @@ export function LoginScreen() {
     }
   };
 
+  const handleGuestBrowse = async () => {
+    const visitorId = await getOrCreateVisitorId();
+    await login({ role: "visitor", name: "ضيف", phone: "", visitorId });
+  };
+
   const handleVisitorLogin = async () => {
     const normalizedPhone = arabicToEnglish(phone).replace(/[^0-9]/g, "");
     if (!name.trim()) { Alert.alert("تنبيه", "يرجى إدخال الاسم"); return; }
@@ -200,6 +205,12 @@ export function LoginScreen() {
               )}
             </TouchableOpacity>
 
+            {activeTab === "visitor" && (
+              <TouchableOpacity style={styles.guestBtn} onPress={handleGuestBrowse}>
+                <Text style={styles.guestBtnText}>تصفح بدون تسجيل</Text>
+              </TouchableOpacity>
+            )}
+
             <View style={styles.legalRow}>
               <TouchableOpacity onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/privacy`)}>
                 <Text style={styles.legalLink}>سياسة الخصوصية</Text>
@@ -261,6 +272,11 @@ const styles = StyleSheet.create({
     alignItems: "center", marginTop: 8,
   },
   loginBtnText: { color: C.bgDark, fontSize: 16, fontWeight: "800" },
+  guestBtn: {
+    borderWidth: 1, borderColor: C.goldLight, borderRadius: 12,
+    paddingVertical: 13, alignItems: "center", marginTop: 10,
+  },
+  guestBtnText: { color: C.goldLight, fontSize: 14, fontWeight: "600" },
   legalRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 16 },
   legalLink: { color: C.goldLight, fontSize: 12, textDecorationLine: "underline" },
   legalSep: { color: C.textMuted, fontSize: 12 },
