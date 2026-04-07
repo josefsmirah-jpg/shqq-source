@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "شقق وأراضي المستقبل",
+    "slug": "real-estate",
+    "version": "1.0.2",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "realestate",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A5C2E"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mustaqbal.realestate",
+      "buildNumber": "3",
+      "infoPlist": {
+        "NSCameraUsageDescription": "يستخدم التطبيق الكاميرا لالتقاط صور العقارات وإضافتها للإعلانات فقط، ولا تُستخدم لأي غرض آخر.",
+        "NSPhotoLibraryUsageDescription": "يستخدم التطبيق معرض الصور لاختيار صور العقارات وإضافتها للإعلانات فقط، ولا تُستخدم لأي غرض آخر.",
+        "NSPhotoLibraryAddUsageDescription": "يحتاج التطبيق إذن الحفظ لتخزين صور البطاقات العقارية على جهازك عند مشاركتها.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.mustaqbal.realestate",
+      "versionCode": 3,
+      "targetSdkVersion": 34,
+      "compileSdkVersion": 34,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#1A5C2E"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "يستخدم التطبيق معرض الصور لاختيار صور العقارات وإضافتها للإعلانات فقط.",
+          "cameraPermission": "يستخدم التطبيق الكاميرا لالتقاط صور العقارات وإضافتها للإعلانات فقط."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "affdc62f-ef83-4c2b-a9cb-eb4c92b8df6f"
+      }
+    },
+    "owner": "josefbo1987"
+  }
+}
