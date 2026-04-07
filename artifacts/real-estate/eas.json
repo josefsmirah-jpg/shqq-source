@@ -1,0 +1,39 @@
+{
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "workspaceapi-server-production-6893.up.railway.app"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false,
+        "credentialsSource": "local"
+      },
+      "env": {
+        "EXPO_PUBLIC_DOMAIN": "workspaceapi-server-production-6893.up.railway.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6761640135",
+        "ascApiKeyPath": "./credentials/AuthKey_2A2QSRA5AQ.p8",
+        "ascApiKeyIssuerId": "c9df693e-fdd1-472a-884f-b86f1d96d930",
+        "ascApiKeyId": "2A2QSRA5AQ"
+      }
+    }
+  }
+}
