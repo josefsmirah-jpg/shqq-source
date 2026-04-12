@@ -2,7 +2,6 @@
   "name": "@workspace/api-client-react",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,5 +10,6 @@
   },
   "peerDependencies": {
     "react": ">=18"
-  }
+  },
+  "main": "./src/index.ts"
 }
