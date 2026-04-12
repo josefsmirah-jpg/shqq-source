@@ -4,11 +4,12 @@ import React, {
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
   Image, Dimensions, ScrollView, ActivityIndicator, Platform,
-  Alert, ViewToken, Modal, Pressable,
+  Alert, ViewToken, Modal, Pressable, Share, Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Haptics from "expo-haptics";
 import { captureRef } from "react-native-view-shot";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ContactOptionsModal from "@/components/ContactOptionsModal";
@@ -22,27 +23,21 @@ const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
 function PhotoImage({ uri, height }: { uri: string; height: number }) {
-  const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [error, setError] = useState(false);
   return (
     <View style={{ width: SCREEN_W, height, justifyContent: "center", alignItems: "center" }}>
-      <Image
-        source={{ uri }}
-        style={{ width: SCREEN_W, height }}
-        resizeMode="contain"
-        onLoadStart={() => setStatus("loading")}
-        onLoad={() => setStatus("ok")}
-        onError={() => setStatus("error")}
-      />
-      {status === "loading" && (
-        <View style={{ position: "absolute" }}>
-          <ActivityIndicator size="large" color="#C9A022" />
-        </View>
-      )}
-      {status === "error" && (
-        <View style={{ position: "absolute", alignItems: "center" }}>
+      {error ? (
+        <View style={{ alignItems: "center" }}>
           <Text style={{ color: "#C9A022", fontSize: 40 }}>🖼️</Text>
           <Text style={{ color: "#aaa", fontSize: 13, marginTop: 6 }}>تعذّر تحميل الصورة</Text>
         </View>
+      ) : (
+        <Image
+          source={{ uri }}
+          style={{ width: SCREEN_W, height }}
+          resizeMode="contain"
+          onError={() => setError(true)}
+        />
       )}
     </View>
   );
@@ -72,18 +67,106 @@ interface Props {
   onClose: () => void;
   isAdmin?: boolean;
   autoExport?: boolean;
+  visitorShare?: boolean;
 }
 
-export default function CardViewerScreen({ listings, startIndex = 0, onClose, isAdmin, autoExport }: Props) {
+const APP_STORE_LINK = "https://apps.apple.com/app/id6761640135";
+
+function formatListingShareText(item: Listing): string {
+  const lines: string[] = [];
+  const typeRegion = [item.propertyType, item.region].filter(Boolean).join(" - ");
+  if (typeRegion) lines.push(`🏠 ${typeRegion}`);
+  if (item.price) lines.push(`💰 السعر: ${item.price}`);
+  if (item.area) lines.push(`📐 المساحة: ${item.area} م²`);
+  if (item.floor) lines.push(`🏢 الطابق: ${item.floor}`);
+  if (item.description) lines.push(`\n${item.description}`);
+  lines.push(`\n📲 شاهد البطاقة كاملاً على تطبيق شقق وأراضي المستقبل:`);
+  lines.push(APP_STORE_LINK);
+  return lines.join("\n");
+}
+
+function AutoPhotoSlider({ photos }: { photos: string[] }) {
+  const [current, setCurrent] = useState(0);
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goNext = useCallback(() => {
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_W,
+      duration: 900,
+      useNativeDriver: true,
+    }).start(() => {
+      slideAnim.setValue(-SCREEN_W);
+      setCurrent(prev => (prev + 1) % photos.length);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 900,
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [photos.length, slideAnim]);
+
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    intervalRef.current = setInterval(goNext, 3500);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [goNext, photos.length]);
+
+  if (!photos.length) return null;
+
+  return (
+    <View style={{ paddingTop: 10 }}>
+      {/* تلميح السحب */}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginBottom: 8, paddingHorizontal: 4 }}>
+        <Text style={{ color: C.gold, fontSize: 13, fontWeight: "700", textAlign: "right" }}>
+          اسحب يميناً لمشاهدة الصورة كاملة
+        </Text>
+        <Text style={{ color: C.gold, fontSize: 22, fontWeight: "800", marginRight: 8 }}>←</Text>
+      </View>
+
+      {/* الصورة — pointerEvents="none" تمنع التفاعل ولكن تسمح بالسحب عبرها */}
+      <View
+        style={{ height: 160, borderRadius: 12, overflow: "hidden", marginHorizontal: 4 }}
+        pointerEvents="none"
+      >
+        <Animated.View style={{ width: "100%", height: "100%", transform: [{ translateX: slideAnim }] }}>
+          <Image
+            source={{ uri: getImageUri(photos[current]) }}
+            style={{ width: "100%", height: "100%" }}
+            resizeMode="cover"
+          />
+        </Animated.View>
+        {/* نقاط المؤشر */}
+        <View style={{ position: "absolute", bottom: 8, left: 0, right: 0, flexDirection: "row", justifyContent: "center", gap: 6 }}>
+          {photos.map((_, i) => (
+            <View
+              key={i}
+              style={{
+                width: i === current ? 18 : 6,
+                height: 6,
+                borderRadius: 3,
+                backgroundColor: i === current ? C.gold : "rgba(255,255,255,0.5)",
+              }}
+            />
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export default function CardViewerScreen({ listings, startIndex = 0, onClose, isAdmin, autoExport, visitorShare }: Props) {
   const [localListings, setLocalListings] = useState<Listing[]>(() => listings);
   const hasMultiple = localListings.length > 1;
+  const displayListings = localListings;
 
   const [currentCard, setCurrentCard] = useState(startIndex);
-  const [photoPage, setPhotoPage]   = useState(0);
+  const [horzPageMap, setHorzPageMap] = useState<Record<number, number>>({});
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSharingMode, setIsSharingMode] = useState(false);
   const [showContact, setShowContact] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [flatListScrollEnabled, setFlatListScrollEnabled] = useState(true);
   const [pageH, setPageH] = useState(
     SCREEN_H - 110 - ACTION_ROW_H - (hasMultiple ? NAV_ROW_H : 0)
   );
@@ -104,33 +187,27 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
   currentCardRef2.current  = currentCard;
   isCapturingRef.current   = isCapturing;
 
-  const vertListRef    = useRef<FlatList>(null);
-  const horzScrollRefs = useRef<Map<number, ScrollView | null>>(new Map());
-  const cardViewRefs   = useRef<Map<number, View | null>>(new Map());
-  const exportCardRefs = useRef<Map<number, View | null>>(new Map());
-  const currentCardRef = useRef(currentCard);
+  const vertListRef      = useRef<FlatList>(null);
+  const horzScrollRefs   = useRef<Map<number, ScrollView | null>>(new Map());
+  const cardViewRefs     = useRef<Map<number, View | null>>(new Map());
+  const exportCardRefs   = useRef<Map<number, View | null>>(new Map());
+  const currentCardRef   = useRef(currentCard);
   currentCardRef.current = currentCard;
-  const photoPageMapRef = useRef<Map<number, number>>(new Map());
-  const didScrollRef    = useRef(false);
+  const initializedRef   = useRef<Set<number>>(new Set());
+  const horzPageMapRef   = useRef<Record<number, number>>({});
+  horzPageMapRef.current = horzPageMap;
 
-  const getCardX = useCallback((photos: string[]) => photos.length * SCREEN_W, []);
+  const getCardX = useCallback((photos: string[]) =>
+    photos.length > 0 ? photos.length * SCREEN_W : 0, []);
 
   const resetToCard = useCallback((cardIndex: number) => {
-    const item = listings[cardIndex];
+    const item = localListingsRef.current[cardIndex];
     const photos = item?.images ?? [];
     horzScrollRefs.current.get(cardIndex)?.scrollTo({
       x: getCardX(photos),
       animated: false,
     });
-  }, [listings, getCardX]);
-
-  const updatePhotoPage = useCallback((pg: number, cardIndex: number) => {
-    if (cardIndex !== currentCardRef.current) return;
-    const prev = photoPageMapRef.current.get(cardIndex) ?? 0;
-    if (pg === prev) return;
-    photoPageMapRef.current.set(cardIndex, pg);
-    setPhotoPage(pg);
-  }, []);
+  }, [getCardX]);
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -138,8 +215,8 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
       const idx = viewableItems[0].index ?? 0;
       if (idx === currentCardRef.current) return;
       resetToCard(currentCardRef.current);
+      resetToCard(idx);
       setCurrentCard(idx);
-      setPhotoPage(photoPageMapRef.current.get(idx) ?? 0);
     },
     [resetToCard]
   );
@@ -156,13 +233,7 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
       if (Math.abs(h - prev) < 4) return prev;
       return h;
     });
-    if (!didScrollRef.current && startIndex > 0) {
-      didScrollRef.current = true;
-      setTimeout(() => {
-        vertListRef.current?.scrollToIndex({ index: startIndex, animated: false });
-      }, 60);
-    }
-  }, [startIndex]);
+  }, []);
 
   // ── تحميل مسبق لصور البطاقات المجاورة (±2) ──────────────────────────────
   useEffect(() => {
@@ -198,11 +269,13 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
           uris.push(uri);
         }
         if (cancelled || !uris.length) return;
+        // مشاركة كل بطاقة على حدة بالتسلسل — المستخدم يُشارك كل واحدة ثم تنتقل للتالية
         if (await Sharing.isAvailableAsync()) {
           for (const uri of uris) {
+            if (cancelled) break;
             await Sharing.shareAsync(uri, {
               mimeType: "image/png",
-              dialogTitle: "بطاقة عقارية",
+              dialogTitle: "مشاركة البطاقة العقارية",
               UTI: "public.png",
             });
           }
@@ -223,7 +296,6 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const listing        = localListings[currentCard];
-  const totalPages     = 1 + (listing?.images?.length ?? 0);
   const displayPhone   = (listing?.isFeatured && listing?.ownerPhone)
     ? listing.ownerPhone
     : FIXED_PHONE;
@@ -272,6 +344,14 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
     setIsCapturing(true);
 
     try {
+      if (visitorShare) {
+        await Share.share({
+          message: formatListingShareText(item),
+          title: "شقق وأراضي المستقبل",
+        });
+        return;
+      }
+
       if (Platform.OS === "web") {
         // ── الويب: جلب الصورة من السيرفر مباشرةً (تجنباً لمشاكل canvas مع العربية) ──
         const imageUrl = `${BASE_URL}/api/listings/${item.id}/card-image`;
@@ -333,6 +413,18 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
     if (!ids.length || isCapturingRef.current) return;
     setIsCapturing(true);
     try {
+      if (visitorShare) {
+        const selectedItems = localListings.filter((l) => ids.includes(l.id));
+        const messages = selectedItems.map((item) => formatListingShareText(item));
+        await Share.share({
+          message: messages.join("\n\n────────────────\n\n"),
+          title: "شقق وأراضي المستقبل",
+        });
+        setSelectMode(false);
+        selectedIdsRef.current = new Set();
+        return;
+      }
+
       if (Platform.OS !== "web") {
         // native: جلب كل بطاقة من السيرفر وحفظها مؤقتاً
         if (!(await Sharing.isAvailableAsync())) return;
@@ -394,7 +486,6 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
   const goTo = useCallback((idx: number) => {
     resetToCard(currentCardRef.current);
     setCurrentCard(idx);
-    setPhotoPage(photoPageMapRef.current.get(idx) ?? 0);
     vertListRef.current?.scrollToIndex({ index: idx, animated: true });
   }, [resetToCard]);
 
@@ -529,41 +620,50 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
 
   const renderListingPage = ({ item, index }: { item: Listing; index: number }) => {
     const photos = item.images ?? [];
-    const cardX  = photos.length * SCREEN_W;          // البطاقة في الأقصى يميناً
-    const reversedPhotos = [...photos].reverse();      // عكس الترتيب: صورة 1 تظهر أولاً
-
-    const calcPhotoPage = (x: number) =>
-      photos.length - Math.round(x / SCREEN_W);       // 0 = بطاقة، 1..N = صور
+    const cardX  = getCardX(photos);
+    const reversedPhotos = [...photos].reverse();
 
     return (
       <View style={{ width: SCREEN_W, height: pageH, backgroundColor: C.bgDark }}>
-        {/*
-          اتجاه السحب: يمين ← يسار (RTL طبيعي)
-          الترتيب: [صور معكوسة ... صورة 1 | البطاقة]
-          x=cardX عند الفتح، السحب يميناً (x يقل) يظهر الصور بالترتيب
-        */}
         <ScrollView
           ref={(r) => {
-            horzScrollRefs.current.set(index, r);
-            // انتقل فوراً لموضع البطاقة عند التصيير
-            if (r) requestAnimationFrame(() => r.scrollTo({ x: cardX, animated: false }));
+            if (r) {
+              horzScrollRefs.current.set(index, r);
+              if (!initializedRef.current.has(index)) {
+                initializedRef.current.add(index);
+                requestAnimationFrame(() => {
+                  r.scrollTo({ x: cardX, animated: false });
+                });
+              }
+            } else {
+              horzScrollRefs.current.delete(index);
+            }
           }}
           horizontal
           pagingEnabled
+          directionalLockEnabled
           showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={80}
-          onScroll={(e) => {
-            updatePhotoPage(calcPhotoPage(e.nativeEvent.contentOffset.x), index);
+          scrollEventThrottle={16}
+          onScrollBeginDrag={() => {
+            setFlatListScrollEnabled(false);
           }}
-          onMomentumScrollEnd={(e) => {
-            updatePhotoPage(calcPhotoPage(e.nativeEvent.contentOffset.x), index);
+          onScrollEndDrag={() => {
+            setFlatListScrollEnabled(true);
+          }}
+          onMomentumScrollEnd={() => {
+            setFlatListScrollEnabled(true);
+          }}
+          onScroll={(e) => {
+            const x = e.nativeEvent.contentOffset.x;
+            const page = Math.round(x / SCREEN_W);
+            setHorzPageMap(prev => prev[index] === page ? prev : { ...prev, [index]: page });
           }}
         >
-          {/* الصور أولاً (x=0 … (N-1)*W) — معكوسة حتى صورة 1 تظهر أول سحبة */}
+          {/* الصور — معكوسة حتى صورة 1 تظهر أول سحبة يميناً */}
           {reversedPhotos.map((uri: string, ri: number) => {
-            const realIdx = photos.length - 1 - ri;   // الرقم الحقيقي للصورة
+            const realIdx = photos.length - 1 - ri;
             return (
-              <View key={ri} style={styles.photoPage}>
+              <View key={ri} style={[styles.photoPage, { height: pageH }]}>
                 <PhotoImage uri={getImageUri(uri)} height={pageH} />
                 <View style={styles.photoOverlay}>
                   <Text style={styles.photoCounter}>
@@ -574,13 +674,9 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
             );
           })}
 
-          {/* البطاقة أخيراً (x = N*W) */}
-          <View style={{ width: SCREEN_W }}>
-            <ScrollView
-              contentContainerStyle={styles.cardScrollContent}
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled
-            >
+          {/* البطاقة — في أقصى اليمين */}
+          <View style={{ width: SCREEN_W, height: pageH }}>
+            <View style={styles.cardScrollContent}>
               <View
                 ref={(r) => { cardViewRefs.current.set(index, r as View | null); }}
                 collapsable={false}
@@ -588,16 +684,14 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
               >
                 {renderCardContent(item)}
               </View>
-              {photos.length > 0 && (
-                <View style={styles.swipeHint}>
-                  <Text style={styles.swipeHintText}>
-                    ← اسحب يميناً لمشاهدة الصور ({photos.length})
-                  </Text>
-                </View>
+              {/* عرض الصور التلقائي في الفراغ أسفل البطاقة */}
+              {photos.length > 0 && !isSharingMode && (
+                <AutoPhotoSlider photos={photos} />
               )}
-            </ScrollView>
+            </View>
           </View>
         </ScrollView>
+
       </View>
     );
   };
@@ -627,26 +721,35 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.dotsWrap}>
-              {Array.from({ length: totalPages }).map((_, i) => {
-                const page = totalPages - 1 - i;
-                return (
-                  <View key={page} style={[styles.dot, photoPage === page && styles.dotActive]} />
-                );
-              })}
-            </View>
+            <View style={styles.dotsWrap} />
           )}
 
-          <Text style={styles.topBarTitle}>
-            {selectMode
-              ? selectedIds.size > 0
-                ? `محدد: ${selectedIds.size}`
-                : "اضغط ✓ لتحديد البطاقة"
-              : localListings.length > 1
-                ? `بطاقة ${currentCard + 1} / ${localListings.length}`
-                : "بطاقة العقار"
-            }
-          </Text>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+              {(() => {
+                const cPhotos = localListings[currentCard]?.images ?? [];
+                if (cPhotos.length === 0) return null;
+                const total = cPhotos.length + 1;
+                const hPage = horzPageMap[currentCard] ?? cPhotos.length;
+                const pos   = Math.min(total, Math.max(1, cPhotos.length + 1 - hPage));
+                return (
+                  <View style={styles.pagePosBadge}>
+                    <Text style={styles.pagePosText}>🖼 {total} / {pos}</Text>
+                  </View>
+                );
+              })()}
+              <Text style={styles.topBarTitle}>
+                {selectMode
+                  ? selectedIds.size > 0
+                    ? `محدد: ${selectedIds.size}`
+                    : "اضغط ✓ لتحديد البطاقة"
+                  : localListings.length > 1
+                    ? `بطاقة ${currentCard + 1} / ${localListings.length}`
+                    : "بطاقة العقار"
+                }
+              </Text>
+            </View>
+          </View>
 
           {selectMode ? (
             <TouchableOpacity
@@ -676,6 +779,8 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
                 onPress={() => setShowMenu(true)}
                 style={styles.menuBtn}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="قائمة الخيارات"
               >
                 <Text style={styles.menuBtnText}>⋯</Text>
               </TouchableOpacity>
@@ -683,6 +788,8 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
                 onPress={onClose}
                 style={styles.closeBtn}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="إغلاق"
               >
                 <Text style={styles.closeBtnText}>✕ إغلاق</Text>
               </TouchableOpacity>
@@ -694,38 +801,47 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
       {/* قائمة البطاقات */}
       <FlatList
         ref={vertListRef}
-        data={localListings}
+        data={displayListings}
         renderItem={renderListingPage}
-        keyExtractor={(it) => String(it.id)}
+        keyExtractor={(it, i) => `${it.id}-${i}`}
         extraData={[isCapturing, pageH, selectMode, selectedIds]}
         pagingEnabled
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={(_, i) => ({ length: pageH, offset: pageH * i, index: i })}
+        initialScrollIndex={startIndex > 0 ? startIndex : undefined}
         windowSize={3}
+        initialNumToRender={1}
         maxToRenderPerBatch={2}
+        scrollEnabled={flatListScrollEnabled}
+        onScrollBeginDrag={() => {
+          resetToCard(currentCardRef.current);
+          setFlatListScrollEnabled(true);
+        }}
         onLayout={onFlatListLayout}
         style={{ flex: 1 }}
       />
 
-      {/* ── بطاقات مخفية للتصوير فقط ── */}
-      <View style={{ position: "absolute", left: 0, top: 0, zIndex: -1 }}>
-        {localListings.map((item, index) => (
-          <View
-            key={item.id}
-            ref={(r) => { exportCardRefs.current.set(index, r as View | null); }}
-            collapsable={false}
-            style={[
-              styles.card,
-              { width: CARD_W },
-              exportingIndex !== index && { opacity: 0, position: "absolute", left: -9999 },
-            ]}
-          >
-            {renderCardContent(item)}
-          </View>
-        ))}
-      </View>
+      {/* ── بطاقات مخفية للتصوير — تُنشأ فقط عند الحاجة الفعلية للتصدير ── */}
+      {(autoExport || selectMode) && (
+        <View style={{ position: "absolute", left: 0, top: 0, zIndex: -1 }}>
+          {localListings.map((item, index) => (
+            <View
+              key={item.id}
+              ref={(r) => { exportCardRefs.current.set(index, r as View | null); }}
+              collapsable={false}
+              style={[
+                styles.card,
+                { width: CARD_W },
+                exportingIndex !== index && { opacity: 0, position: "absolute", left: -9999 },
+              ]}
+            >
+              {renderCardContent(item)}
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* ━━━ شريط الأزرار الثابت في الأسفل ━━━ */}
       <SafeAreaView edges={["bottom"]} style={{ backgroundColor: C.bgDark }}>
@@ -734,7 +850,9 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
           <TouchableOpacity
             activeOpacity={0.8}
             style={styles.callBtn}
-            onPress={() => setShowContact(true)}
+            onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setShowContact(true); }}
+            accessibilityRole="button"
+            accessibilityLabel="اتصل بصاحب العقار"
           >
             <Text style={styles.callBtnText}>📞  اتصال</Text>
           </TouchableOpacity>
@@ -742,6 +860,7 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
             activeOpacity={0.8}
             style={[styles.shareBtn, (isCapturing || (selectMode && selectedIds.size === 0)) && styles.btnDisabled]}
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               if (selectMode) {
                 shareSelectedCards();
               } else {
@@ -749,6 +868,9 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
               }
             }}
             disabled={isCapturing || (selectMode && selectedIds.size === 0)}
+            accessibilityRole="button"
+            accessibilityLabel={selectMode && selectedIds.size > 0 ? `مشاركة ${selectedIds.size} بطاقات محددة` : "مشاركة بطاقة العقار"}
+            accessibilityState={{ disabled: isCapturing || (selectMode && selectedIds.size === 0) }}
           >
             {isCapturing
               ? <ActivityIndicator color={C.bgDark} size="small" />
@@ -764,9 +886,11 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
         {hasMultiple && (
           <View style={styles.navRow}>
             <TouchableOpacity
-              style={[styles.navBtn, currentCard >= localListings.length - 1 && styles.navBtnDisabled]}
-              onPress={() => !selectMode && currentCard < localListings.length - 1 && goTo(currentCard + 1)}
-              disabled={currentCard >= localListings.length - 1 || selectMode}
+              style={styles.navBtn}
+              onPress={() => !selectMode && goTo(currentCard + 1)}
+              disabled={selectMode}
+              accessibilityRole="button"
+              accessibilityLabel="البطاقة التالية"
             >
               <Text style={styles.navBtnText}>التالي ↓</Text>
             </TouchableOpacity>
@@ -775,6 +899,9 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
               style={[styles.navBtn, currentCard <= 0 && styles.navBtnDisabled]}
               onPress={() => !selectMode && currentCard > 0 && goTo(currentCard - 1)}
               disabled={currentCard <= 0 || selectMode}
+              accessibilityRole="button"
+              accessibilityLabel="البطاقة السابقة"
+              accessibilityState={{ disabled: currentCard <= 0 }}
             >
               <Text style={styles.navBtnText}>↑ السابق</Text>
             </TouchableOpacity>
@@ -794,8 +921,26 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
                 setTimeout(() => {
                   Alert.alert("إبلاغ عن محتوى", "هل تريد الإبلاغ عن هذا الإعلان؟", [
                     { text: "إلغاء", style: "cancel" },
-                    { text: "إبلاغ", style: "destructive",
-                      onPress: () => Alert.alert("شكراً", "تم استلام بلاغك وسيتم مراجعته") },
+                    {
+                      text: "إبلاغ", style: "destructive",
+                      onPress: async () => {
+                        try {
+                          const raw = await AsyncStorage.getItem("auth_user");
+                          const auth = raw ? JSON.parse(raw) : null;
+                          await fetch(`${BASE_URL}/api/reports`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              listingId: listing?.id,
+                              listingRegion: listing?.region || null,
+                              reporterName: auth?.name || null,
+                              reporterPhone: auth?.phone || null,
+                            }),
+                          });
+                        } catch {}
+                        Alert.alert("شكراً", "تم استلام بلاغك وسيتم مراجعته من قِبل فريقنا");
+                      },
+                    },
                   ]);
                 }, 300);
               }}
@@ -817,6 +962,7 @@ export default function CardViewerScreen({ listings, startIndex = 0, onClose, is
         onLog={listing?.isFeatured ? handleContactLog : undefined}
       />
 
+
     </View>
   );
 }
@@ -830,8 +976,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   topBarTitle: {
-    flex: 1, textAlign: "center",
+    textAlign: "center",
     color: C.gold, fontSize: 14, fontWeight: "700",
+  },
+  pagePosBadge: {
+    marginTop: 2,
+    backgroundColor: "rgba(201,168,76,0.15)",
+    borderRadius: 10, paddingHorizontal: 8, paddingVertical: 1,
+    borderWidth: 1, borderColor: C.gold,
+  },
+  pagePosText: {
+    color: C.gold, fontSize: 11, fontWeight: "600",
   },
   dotsWrap: {
     flexDirection: "row", gap: 5, minWidth: 56,
@@ -863,7 +1018,7 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: C.gold,
   },
   cardScrollContent: {
-    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 8,
+    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 16,
   },
 
   cardHeader: {
@@ -955,23 +1110,48 @@ const styles = StyleSheet.create({
   footerBrand: { color: CARD_GREEN, fontWeight: "800", fontSize: 13 },
   footerCard:  { color: CARD_GREEN, fontWeight: "800", fontSize: 13 },
 
-  // ──── صور ────
+  // ──── صور بجانب البطاقة ────
   photoPage: {
     width: SCREEN_W, backgroundColor: "#000",
     justifyContent: "center", alignItems: "center",
   },
-  fullPhoto: { width: SCREEN_W },
-  photoOverlay: { position: "absolute", bottom: 20, left: 0, right: 0, alignItems: "center" },
+  photoOverlay: {
+    position: "absolute", bottom: 20, left: 0, right: 0, alignItems: "center",
+  },
   photoCounter: {
     backgroundColor: "rgba(0,0,0,0.65)", color: "#fff",
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, fontSize: 13,
   },
-  swipeHint: {
-    alignItems: "center", paddingVertical: 8, marginTop: 8,
-    backgroundColor: "rgba(201,160,34,0.1)",
-    borderRadius: 8, borderWidth: 1, borderColor: "rgba(201,160,34,0.3)",
+
+  // ──── شريط الصور المصغرة ────
+  thumbStrip: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    paddingTop: 5, paddingBottom: 8,
   },
-  swipeHintText: { color: C.goldLight, fontSize: 13 },
+  swipeHint: {
+    alignItems: "flex-start", paddingHorizontal: 12, marginBottom: 4,
+  },
+  swipeHintText: {
+    color: "#C9A84C", fontSize: 11, fontWeight: "600",
+  },
+  thumbStripContent: {
+    paddingHorizontal: 12, gap: 8,
+    flexDirection: "row", alignItems: "center",
+  },
+  thumbBtn: {
+    width: 68, height: 68, borderRadius: 8,
+    overflow: "hidden", borderWidth: 2, borderColor: "#C9A84C",
+  },
+  thumbImg: {
+    width: "100%", height: "100%",
+  },
+  thumbNumBadge: {
+    position: "absolute", bottom: 2, right: 2,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1,
+  },
+  thumbNumText: { color: "#fff", fontSize: 10, fontWeight: "700" },
 
   // ──── شريط الأزرار السفلي ────
   actionRow: {

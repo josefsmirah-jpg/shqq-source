@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useVisitorLogin, useStaffLogin } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { arabicToEnglish } from "@/utils/arabic";
@@ -26,7 +27,7 @@ async function getOrCreateVisitorId(): Promise<string> {
 
 type TabType = "visitor" | "company" | "employee" | "admin";
 
-export function LoginScreen() {
+export function LoginScreen({ onClose }: { onClose?: () => void }) {
   const { login } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>("visitor");
   const [name, setName] = useState("");
@@ -59,11 +60,12 @@ export function LoginScreen() {
   };
 
   const handleGuestBrowse = async () => {
-    const visitorId = await getOrCreateVisitorId();
-    await login({ role: "visitor", name: "ضيف", phone: "", visitorId });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onClose?.();
   };
 
   const handleVisitorLogin = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const normalizedPhone = arabicToEnglish(phone).replace(/[^0-9]/g, "");
     if (!name.trim()) { Alert.alert("تنبيه", "يرجى إدخال الاسم"); return; }
     if (normalizedPhone.length < 10) {
@@ -79,6 +81,7 @@ export function LoginScreen() {
             const loginData: any = { role: data.role as any, name: data.name || name, phone: normalizedPhone };
             if (["visitor", "company"].includes(data.role as any)) loginData.visitorId = visitorId;
             await login(loginData);
+            onClose?.();
           } else {
             Alert.alert("خطأ", data.message || "فشل تسجيل الدخول");
           }
@@ -89,6 +92,7 @@ export function LoginScreen() {
   };
 
   const handleStaffLogin = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!username.trim() || !password.trim()) {
       Alert.alert("تنبيه", "يرجى إدخال اسم المستخدم وكلمة المرور");
       return;
@@ -99,6 +103,7 @@ export function LoginScreen() {
         onSuccess: async (data) => {
           if (data.success) {
             await login({ role: data.role as any, name: data.name || username, id: data.id, phone: (data as any).phone });
+            onClose?.();
           } else {
             Alert.alert("خطأ", data.message || "اسم المستخدم أو كلمة المرور غير صحيحة");
           }
@@ -120,7 +125,17 @@ export function LoginScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity onPress={handleLogoTap} activeOpacity={0.9} style={styles.logoContainer}>
+          {onClose && (
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="إغلاق"
+            >
+              <Text style={styles.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleLogoTap} activeOpacity={0.9} style={styles.logoContainer} accessibilityLabel="شعار التطبيق" accessibilityRole="image">
             <Image source={require("@/assets/images/logo.jpeg")} style={styles.logo} resizeMode="contain" />
             <Text style={styles.appName}>شقق وأراضي المستقبل</Text>
           </TouchableOpacity>
@@ -139,6 +154,7 @@ export function LoginScreen() {
           <View style={styles.form}>
             {!isStaff ? (
               <>
+                <Text style={styles.sectionTitle}>أنشئ حساب</Text>
                 <Text style={styles.label}>الاسم الكامل</Text>
                 <TextInput
                   style={styles.input}
@@ -147,17 +163,24 @@ export function LoginScreen() {
                   placeholder="أدخل اسمك الكامل"
                   placeholderTextColor={C.textMuted}
                   textAlign="right"
+                  accessibilityLabel="الاسم الكامل"
+                  accessibilityHint="أدخل اسمك الكامل"
                 />
                 <Text style={styles.label}>رقم الهاتف</Text>
                 <View style={styles.phoneBox}>
                   <TextInput
                     style={styles.phoneInput}
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={v => setPhone(arabicToEnglish(v))}
+                    onBlur={() => setPhone(prev => arabicToEnglish(prev))}
                     placeholder="07XXXXXXXX"
                     placeholderTextColor={C.textMuted}
-                    keyboardType="number-pad"
+                    keyboardType="phone-pad"
                     textAlign="right"
+                    autoCorrect={false}
+                    autoComplete="tel"
+                    accessibilityLabel="رقم الهاتف"
+                    accessibilityHint="أدخل رقم هاتفك المكون من 10 أرقام على الأقل"
                   />
                   <View style={styles.phoneHintBox}>
                     <Text style={styles.phoneHint}>⚠️ يجب أن لا يقل رقم الهاتف عن ١٠ أرقام</Text>
@@ -175,6 +198,7 @@ export function LoginScreen() {
                   placeholderTextColor={C.textMuted}
                   textAlign="right"
                   autoCapitalize="none"
+                  accessibilityLabel="اسم المستخدم"
                 />
                 <Text style={styles.label}>كلمة المرور</Text>
                 <TextInput
@@ -185,14 +209,37 @@ export function LoginScreen() {
                   placeholderTextColor={C.textMuted}
                   secureTextEntry
                   textAlign="right"
+                  accessibilityLabel="كلمة المرور"
                 />
               </>
+            )}
+
+            {!isStaff && (
+              <Text style={styles.consentText}>
+                بالمتابعة، أنت توافق على{" "}
+                <Text
+                  style={styles.consentLink}
+                  onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/privacy`)}
+                  accessibilityRole="link"
+                  accessibilityLabel="سياسة الخصوصية"
+                >
+                  سياسة الخصوصية
+                </Text>
+                {" "}وجمع البيانات اللازمة لتقديم الخدمة
+              </Text>
             )}
 
             <TouchableOpacity
               style={[styles.loginBtn, isLoading2 && { opacity: 0.7 }]}
               onPress={isStaff ? handleStaffLogin : handleVisitorLogin}
               disabled={isLoading2}
+              accessibilityRole="button"
+              accessibilityLabel={
+                activeTab === "visitor" ? "دخول كزائر" :
+                activeTab === "company" ? "دخول كشركة" :
+                activeTab === "employee" ? "دخول كموظف" : "دخول كمدير"
+              }
+              accessibilityState={{ disabled: isLoading2, busy: isLoading2 }}
             >
               {isLoading2 ? (
                 <ActivityIndicator color={C.bgDark} />
@@ -206,17 +253,30 @@ export function LoginScreen() {
             </TouchableOpacity>
 
             {activeTab === "visitor" && (
-              <TouchableOpacity style={styles.guestBtn} onPress={handleGuestBrowse}>
+              <TouchableOpacity
+                style={styles.guestBtn}
+                onPress={handleGuestBrowse}
+                accessibilityRole="button"
+                accessibilityLabel="تصفح التطبيق بدون تسجيل دخول"
+              >
                 <Text style={styles.guestBtnText}>تصفح بدون تسجيل</Text>
               </TouchableOpacity>
             )}
 
             <View style={styles.legalRow}>
-              <TouchableOpacity onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/privacy`)}>
+              <TouchableOpacity
+                onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/privacy`)}
+                accessibilityRole="link"
+                accessibilityLabel="سياسة الخصوصية"
+              >
                 <Text style={styles.legalLink}>سياسة الخصوصية</Text>
               </TouchableOpacity>
               <Text style={styles.legalSep}> · </Text>
-              <TouchableOpacity onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/terms`)}>
+              <TouchableOpacity
+                onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/terms`)}
+                accessibilityRole="link"
+                accessibilityLabel="شروط الاستخدام"
+              >
                 <Text style={styles.legalLink}>شروط الاستخدام</Text>
               </TouchableOpacity>
             </View>
@@ -229,7 +289,13 @@ export function LoginScreen() {
 
 function TabBtn({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity style={[styles.tab, active && styles.tabActive]} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.tab, active && styles.tabActive]}
+      onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
+    >
       <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -238,6 +304,13 @@ function TabBtn({ label, active, onPress }: { label: string; active: boolean; on
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bgDark },
   scroll: { flexGrow: 1, alignItems: "center", paddingHorizontal: 24, paddingBottom: 40 },
+  closeBtn: {
+    alignSelf: "flex-end",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  closeBtnText: { color: C.textMuted, fontSize: 20, fontWeight: "600" },
   logoContainer: { alignItems: "center", marginTop: 30, marginBottom: 24 },
   logo: { width: 160, height: 120 },
   appName: { fontSize: 16, color: C.gold, marginTop: 10, fontWeight: "800", textAlign: "center" },
@@ -247,6 +320,7 @@ const styles = StyleSheet.create({
   tabText: { color: C.textMuted, fontSize: 14, fontWeight: "600" },
   tabTextActive: { color: C.bgDark },
   form: { width: "100%", gap: 8 },
+  sectionTitle: { color: C.white, fontSize: 18, fontWeight: "800", textAlign: "right", marginBottom: 4, marginTop: 4 },
   label: { color: C.gold, fontSize: 14, fontWeight: "600", textAlign: "right" },
   input: {
     backgroundColor: C.inputBg, borderWidth: 1, borderColor: C.inputBorder,
@@ -280,4 +354,9 @@ const styles = StyleSheet.create({
   legalRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 16 },
   legalLink: { color: C.goldLight, fontSize: 12, textDecorationLine: "underline" },
   legalSep: { color: C.textMuted, fontSize: 12 },
+  consentText: {
+    color: C.textMuted, fontSize: 12, textAlign: "center",
+    lineHeight: 18, marginTop: 6, paddingHorizontal: 8,
+  },
+  consentLink: { color: C.goldLight, textDecorationLine: "underline" },
 });

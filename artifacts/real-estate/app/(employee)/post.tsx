@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Image, FlatList, Alert, Platform
 } from "react-native";
+import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as FileSystem from "expo-file-system/legacy";
@@ -11,7 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import AppHeader from "@/components/AppHeader";
 import C from "@/constants/colors";
-import { PROPERTY_TYPES } from "@/utils/arabic";
+import { PROPERTY_TYPES, arabicToEnglish } from "@/utils/arabic";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
 
@@ -71,7 +72,7 @@ const FloorRowItem = memo(
     <View style={[styles.tableRow, isAlt && styles.tableRowAlt]}>
       <View style={styles.numCellView}>
         <TextInput ref={r => setRef(index, "price", r)} style={styles.numInput}
-          value={row.price} onChangeText={v => onUpdate(index, "price", v)}
+          value={row.price} onChangeText={v => onUpdate(index, "price", arabicToEnglish(v))}
           placeholder="---" placeholderTextColor="#C9A02255" keyboardType="numeric"
           textAlign="center" textAlignVertical="center" returnKeyType="next" blurOnSubmit={false}
           onSubmitEditing={() => { if (index < totalRows - 1) focusNext(index + 1, "name"); }} />
@@ -80,7 +81,7 @@ const FloorRowItem = memo(
       <View style={styles.colBorder} />
       <View style={styles.numCellView}>
         <TextInput ref={r => setRef(index, "area", r)} style={styles.numInput}
-          value={row.area} onChangeText={v => onUpdate(index, "area", v)}
+          value={row.area} onChangeText={v => onUpdate(index, "area", arabicToEnglish(v))}
           placeholder="---" placeholderTextColor="#C9A02255" keyboardType="numeric"
           textAlign="center" textAlignVertical="center" returnKeyType="next" blurOnSubmit={false}
           onSubmitEditing={() => focusNext(index, "price")} />
@@ -167,8 +168,10 @@ export default function EmployeePostScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsMultipleSelection: true,
-      quality: 0.8,
+      quality: 0.6,
       selectionLimit: 10 - images.length,
+      maxWidth: 1200,
+      maxHeight: 1200,
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setUploading(true);
@@ -201,6 +204,40 @@ export default function EmployeePostScreen() {
       }
       setUploading(false);
     }
+  };
+
+  const takePhoto = async () => {
+    if (images.length >= 10) return;
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") { Alert.alert("تنبيه", "يرجى السماح للتطبيق باستخدام الكاميرا من إعدادات الجهاز"); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.8 });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setUploading(true);
+      try {
+        const man = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [{ resize: { width: 900 } }],
+          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        const localUri = man.uri;
+        setImages(prev => [...prev, localUri].slice(0, 10));
+        try {
+          const objectPath = await uploadImageViaServer(localUri);
+          setImages(prev => prev.map(img => img === localUri ? objectPath : img));
+        } catch (e) { console.error("Image upload error:", e); }
+      } catch {}
+      setUploading(false);
+    }
+  };
+
+  const showPhotoOptions = () => {
+    if (images.length >= 10) return;
+    if (Platform.OS === "web") { pickImage(); return; }
+    Alert.alert("إضافة صورة", "اختر طريقة الإضافة", [
+      { text: "📷 التقاط صورة", onPress: takePhoto },
+      { text: "🖼 اختيار من المعرض", onPress: pickImage },
+      { text: "إلغاء", style: "cancel" },
+    ]);
   };
 
   const handleSubmit = () => {
@@ -267,7 +304,15 @@ export default function EmployeePostScreen() {
 
   return (
     <View style={styles.container}>
-      <AppHeader title="إضافة عقار جديد" showBack />
+      <AppHeader
+        title="إضافة عقار جديد"
+        showBack
+        right={
+          <TouchableOpacity onPress={() => router.replace("/(employee)")} style={{ padding: 4 }}>
+            <Text style={{ color: C.gold, fontSize: 20, fontWeight: "600" }}>✕</Text>
+          </TouchableOpacity>
+        }
+      />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         {successMsg !== "" && (
@@ -314,7 +359,7 @@ export default function EmployeePostScreen() {
             <TextInput
               style={styles.input}
               value={price}
-              onChangeText={setPrice}
+              onChangeText={v => setPrice(arabicToEnglish(v))}
               placeholder="مثال: 85,000 دينار"
               placeholderTextColor={C.textMuted}
               textAlign="right"
@@ -323,7 +368,7 @@ export default function EmployeePostScreen() {
             <TextInput
               style={styles.input}
               value={area}
-              onChangeText={setArea}
+              onChangeText={v => setArea(arabicToEnglish(v))}
               placeholder="مثال: 500"
               placeholderTextColor={C.textMuted}
               keyboardType="numeric"
@@ -391,7 +436,8 @@ export default function EmployeePostScreen() {
         <TextInput
           style={[styles.input, errors.ownerPhone ? styles.inputError : null]}
           value={ownerPhone}
-          onChangeText={v => { setOwnerPhone(v); if (errors.ownerPhone) setErrors(e => ({ ...e, ownerPhone: "" })); }}
+          onChangeText={v => { setOwnerPhone(arabicToEnglish(v)); if (errors.ownerPhone) setErrors(e => ({ ...e, ownerPhone: "" })); }}
+          onBlur={() => setOwnerPhone(prev => arabicToEnglish(prev))}
           placeholder="07XXXXXXXX"
           placeholderTextColor={C.textMuted}
           keyboardType="phone-pad"
@@ -426,7 +472,7 @@ export default function EmployeePostScreen() {
             </View>
           )}
           ListFooterComponent={images.length < 10 ? (
-            <TouchableOpacity style={styles.addPhotoBtn} onPress={pickImage} disabled={uploading}>
+            <TouchableOpacity style={styles.addPhotoBtn} onPress={showPhotoOptions} disabled={uploading}>
               {uploading ? <ActivityIndicator color={C.gold} /> : <Text style={styles.addPhotoText}>+ صورة</Text>}
             </TouchableOpacity>
           ) : null}

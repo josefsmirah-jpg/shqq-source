@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, ScrollView
+  Alert, ActivityIndicator, ScrollView, Linking
 } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
 import AppHeader from "@/components/AppHeader";
@@ -73,6 +73,10 @@ export default function CompanySettingsScreen() {
           style={[styles.deleteBtn, deleting && { opacity: 0.6 }]}
           onPress={handleDeleteData}
           disabled={deleting}
+          accessibilityRole="button"
+          accessibilityLabel="حذف جميع بيانات الشركة نهائياً"
+          accessibilityHint="سيتم حذف حساب الشركة وجميع إعلاناتها بشكل دائم"
+          accessibilityState={{ disabled: deleting, busy: deleting }}
         >
           {deleting
             ? <ActivityIndicator color={C.error} />
@@ -80,9 +84,19 @@ export default function CompanySettingsScreen() {
           }
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()} accessibilityRole="button" accessibilityLabel="تسجيل الخروج">
           <Text style={styles.logoutBtnText}>تسجيل الخروج</Text>
         </TouchableOpacity>
+
+        <View style={styles.legalRow}>
+          <TouchableOpacity onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/privacy`)} accessibilityRole="link" accessibilityLabel="سياسة الخصوصية">
+            <Text style={styles.legalLink}>سياسة الخصوصية</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalSep}> · </Text>
+          <TouchableOpacity onPress={() => Linking.openURL(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/terms`)} accessibilityRole="link" accessibilityLabel="شروط الاستخدام">
+            <Text style={styles.legalLink}>شروط الاستخدام</Text>
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
     </View>
@@ -118,4 +132,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: C.border,
   },
   logoutBtnText: { color: C.textMuted, fontWeight: "700", fontSize: 15 },
+  legalRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 20, marginBottom: 10 },
+  legalLink: { color: C.goldLight, fontSize: 12, textDecorationLine: "underline" },
+  legalSep: { color: C.textMuted, fontSize: 12 },
 });

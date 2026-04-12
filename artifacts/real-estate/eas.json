@@ -11,8 +11,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "workspaceapi-server-production-6893.up.railway.app"
-      },
-      "node": "20.18.0"
+      }
     },
     "production": {
       "android": {
@@ -24,8 +23,7 @@
       },
       "env": {
         "EXPO_PUBLIC_DOMAIN": "workspaceapi-server-production-6893.up.railway.app"
-      },
-      "node": "20.18.0"
+      }
     }
   },
   "submit": {

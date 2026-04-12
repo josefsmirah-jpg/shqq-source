@@ -1,0 +1,26 @@
+const C = {
+  bg: "#1A5C2E",
+  bgDark: "#13441F",
+  bgLight: "#236B3A",
+  card: "#1E6832",
+  cardLight: "#2D8049",
+  gold: "#C9A022",
+  goldLight: "#DDB63A",
+  goldDark: "#A07A0E",
+  white: "#FFFFFF",
+  textMuted: "#B8D4C0",
+  border: "#2D7040",
+  borderGold: "#C9A022",
+  error: "#E53E3E",
+  success: "#38A169",
+  warning: "#D97706",
+  overlay: "rgba(0,0,0,0.6)",
+  inputBg: "rgba(255,255,255,0.08)",
+  inputBorder: "rgba(201,160,34,0.5)",
+  shadow: "rgba(0,0,0,0.4)",
+  pending: "#D97706",
+  approved: "#38A169",
+  rejected: "#E53E3E",
+};
+
+export default C;
