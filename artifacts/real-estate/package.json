@@ -66,5 +66,9 @@
     "html-to-image": "^1.11.13",
     "jszip": "^3.10.1",
     "react-native-view-shot": "^4.0.3"
+  },
+  "resolutions": {
+    "lru-cache": "^10.4.3",
+    "glob": "^9.3.5"
   }
 }
